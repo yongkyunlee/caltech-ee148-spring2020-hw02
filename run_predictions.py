@@ -1,10 +1,22 @@
 import os
 import math
 import json
-from multiprocessing import Pool
+from multiprocessing import Manager, current_process
+from functools import partial
 
 import numpy as np
 from PIL import Image
+
+# Note that you are not allowed to use test data for training.
+# set the path to the downloaded data:
+data_path = './data/RedLights2011_Medium'
+
+# load splits: 
+split_path = './data/hw02_splits'
+
+# set a path for saving predictions:
+preds_path = './data/hw02_preds'
+os.makedirs(preds_path, exist_ok=True) # create directory if needed
 
 def compute_convolution(I, T, stride=1):
     '''
@@ -34,9 +46,15 @@ def compute_convolution(I, T, stride=1):
             u_idx, d_idx = i - int(T_rows / 2), i + int(T_rows / 2)
             l_idx, r_idx = j - int(T_cols / 2), j + int(T_cols / 2)
             patch = I[u_idx:d_idx+1,l_idx:r_idx+1,:].reshape(-1)
-            patch = patch / np.linalg.norm(patch)
+            if np.isclose(np.linalg.norm(patch), 0):
+                patch[:] = 0
+            else:
+                patch = patch / np.linalg.norm(patch)
             t = T.reshape(-1)
-            t = t / np.linalg.norm(t)
+            if np.isclose(np.linalg.norm(t), 0):
+                t[:] = 0
+            else:
+                t = t / np.linalg.norm(t)
             heatmap[i, j] = np.dot(patch, t)
     return heatmap
 
@@ -98,8 +116,7 @@ def detect_red_light_mf(I, T_arr, threshold):
     template_arr = []
     # add resized templates
     for T in T_arr:
-        # for scale in [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]:
-        for scale in [0.45, 0.5, 0.55, 0.6]:
+        for scale in [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]:
             T_scaled = scale_img(T, scale)
             template_arr.append(np.asarray(T_scaled))
 
@@ -144,54 +161,55 @@ def detect_red_light_mf(I, T_arr, threshold):
 
     return output
 
-def detect_worker(T_arr, threshold, file_name):
+def detect_worker(output_dict, T_arr, threshold, file_name):
     """ Wrapper for multiprocessing """
-    pass
-
+    I = Image.open(os.path.join(data_path, file_name))
+    I = np.asarray(I)
+    pid = current_process()
+    detection = detect_red_light_mf(I, T_arr, threshold)
+    output_dict[file_name] = detection
+    print(f'{pid} - {file_name}: {len(detection)} detections')
 
 if __name__ == '__main__':
-    # Note that you are not allowed to use test data for training.
-    # set the path to the downloaded data:
-    data_path = './data/RedLights2011_Medium'
-
-    # load splits: 
-    split_path = './data/hw02_splits'
-    file_names_train = np.load(os.path.join(split_path,'file_names_train.npy'))
-    file_names_test = np.load(os.path.join(split_path,'file_names_test.npy'))
-
-    # set a path for saving predictions:
-    preds_path = './data/hw02_preds'
-    os.makedirs(preds_path, exist_ok=True) # create directory if needed
-
     # Set this parameter to True when you're done with algorithm development:
     done_tweaking = False
 
     # templates
     T1 = Image.open('./red_light_single.jpg')
     T2 = Image.open('./red_light_double.jpg')
+    T1 = T1.resize((int(T1.width / 2), int(T1.height / 2)))
+    T2 = T2.resize((int(T2.width / 2), int(T2.height / 2)))
 
-    print(T1.width, T1.height)
-    print(T2.width, T2.height)
+    # print(T1.width, T1.height)
+    # print(T2.width, T2.height)
+
+    file_names_train = np.load(os.path.join(split_path,'file_names_train.npy'))
+    file_names_test = np.load(os.path.join(split_path,'file_names_test.npy'))
 
     '''
     Make predictions on the training set.
     '''
-    preds_train = {}
-    file_names_train = ['RL-011.jpg']
-    for i in range(len(file_names_train)):
+    manager = Manager()
+    preds_train = manager.dict()
+    
+    with manager.Pool(processes=6) as pool:
+        pool.map(partial(detect_worker, preds_train, [T1, T2], 0.85), file_names_train)
 
-        # read image using PIL:
-        I = Image.open(os.path.join(data_path,file_names_train[i]))
-        print(I.width, I.height)
+    # for i in range(len(file_names_train)):
 
-        # convert to numpy array:
-        I = np.asarray(I)
+    #     # read image using PIL:
+    #     I = Image.open(os.path.join(data_path,file_names_train[i]))
+    #     print(I.width, I.height)
 
-        preds_train[file_names_train[i]] = detect_red_light_mf(I, [T1, T2], 0.8)
+    #     # convert to numpy array:
+    #     I = np.asarray(I)
+
+    #     preds_train[file_names_train[i]] = detect_red_light_mf(I, [T1, T2], 0.8)
+
 
     # save preds (overwrites any previous predictions!)
     with open(os.path.join(preds_path,'preds_train.json'),'w') as f:
-        json.dump(preds_train,f)
+        json.dump(dict(preds_train),f)
 
     if done_tweaking:
         '''

@@ -18,7 +18,9 @@ def visualize_boxes(file_names, preds, threshold):
         points_arr = preds[file_name]
         for points in points_arr:
             y0, x0, y1, x1, score = points
-            if score > threshold:
+            if threshold is None:
+                draw.rectangle([x0, y0, x1, y1], outline='red', width=2)
+            elif score > threshold:
                 draw.rectangle([x0, y0, x1, y1], outline='red', width=2)
         img.save(os.path.join(OUTPUT_PATH, file_name), "JPEG")
 
@@ -30,4 +32,4 @@ if __name__ == '__main__':
     with open(os.path.join(PREDS_PATH, preds_name)) as fp:
         preds = json.load(fp)
     
-    visualize_boxes(file_names, preds, 0.9)
+    visualize_boxes(file_names, preds, None)
