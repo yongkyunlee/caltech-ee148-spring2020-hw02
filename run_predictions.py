@@ -18,7 +18,7 @@ split_path = './data/hw02_splits'
 preds_path = './data/hw02_preds'
 os.makedirs(preds_path, exist_ok=True) # create directory if needed
 
-def compute_convolution(I, T, stride=1):
+def compute_convolution(I, T, stride=1, upper_portion=2):
     '''
     This function takes an image <I> and a template <T> (both numpy arrays) 
     and returns a heatmap where each grid represents the output produced by 
@@ -36,7 +36,7 @@ def compute_convolution(I, T, stride=1):
     # we leave the edges as 0
     heatmap = np.zeros((n_rows, n_cols))
     # the center of template is calculated as (int(T_rows / 2), int(T_cols/2))
-    for i in range(0, int(n_rows / 2), stride): # assume traffic light on the top half of the picture
+    for i in range(0, int(n_rows / upper_portion), stride): # assume traffic light on the top half of the picture
         # skip if template goes off the image boundary
         if i - int(T_rows / 2) < 0 or i + int(T_rows / 2) >= n_rows:
             continue
@@ -94,9 +94,6 @@ def detect_red_light_mf(I, T_arr, threshold):
     I[:,:,2] is the blue channel
     '''
 
-    '''
-    BEGIN YOUR CODE
-    '''
     def scale_img(img, scale):
         img_width, img_height = img.width * scale, img.height * scale
         if math.ceil(img_width) % 2 == 1:
@@ -116,6 +113,7 @@ def detect_red_light_mf(I, T_arr, threshold):
     template_arr = []
     # add resized templates
     for T in T_arr:
+        # for scale in [0.4, 0.6, 0.8, 1.0]:
         for scale in [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]:
             T_scaled = scale_img(T, scale)
             template_arr.append(np.asarray(T_scaled))
@@ -125,7 +123,7 @@ def detect_red_light_mf(I, T_arr, threshold):
     heatmap = np.zeros((n_rows, n_cols))
     for template in template_arr:
         t_rows, t_cols, _ = template.shape
-        t_heatmap = compute_convolution(I, template)
+        t_heatmap = compute_convolution(I, template, stride=1)
         # update the maximum heapmap and corresponding template size
         for i in range(n_rows):
             for j in range(n_cols):
@@ -180,52 +178,23 @@ if __name__ == '__main__':
     T1 = T1.resize((int(T1.width / 2), int(T1.height / 2)))
     T2 = T2.resize((int(T2.width / 2), int(T2.height / 2)))
 
-    # print(T1.width, T1.height)
-    # print(T2.width, T2.height)
-
     file_names_train = np.load(os.path.join(split_path,'file_names_train.npy'))
     file_names_test = np.load(os.path.join(split_path,'file_names_test.npy'))
 
-    '''
-    Make predictions on the training set.
-    '''
     manager = Manager()
+
+    # Make predictions on the training set.
     preds_train = manager.dict()
-    
-    with manager.Pool(processes=6) as pool:
-        pool.map(partial(detect_worker, preds_train, [T1, T2], 0.85), file_names_train)
+    with manager.Pool(processes=8) as pool:
+        pool.map(partial(detect_worker, preds_train, [T1, T2], 0.9), file_names_train)
+    with open(os.path.join(preds_path, 'preds_train.json'),'w') as f:
+        json.dump(dict(preds_train), f)
 
-    # for i in range(len(file_names_train)):
-
-    #     # read image using PIL:
-    #     I = Image.open(os.path.join(data_path,file_names_train[i]))
-    #     print(I.width, I.height)
-
-    #     # convert to numpy array:
-    #     I = np.asarray(I)
-
-    #     preds_train[file_names_train[i]] = detect_red_light_mf(I, [T1, T2], 0.8)
-
-
-    # save preds (overwrites any previous predictions!)
-    with open(os.path.join(preds_path,'preds_train.json'),'w') as f:
-        json.dump(dict(preds_train),f)
-
+    # Make predictions on the test set
     if done_tweaking:
-        '''
-        Make predictions on the test set. 
-        '''
-        preds_test = {}
-        for i in range(len(file_names_test)):
-
-            # read image using PIL:
-            I = Image.open(os.path.join(data_path,file_names_test[i]))
-
-            # convert to numpy array:
-            I = np.asarray(I)
-
-            preds_test[file_names_test[i]] = detect_red_light_mf(I)
-
-        # save preds (overwrites any previous predictions!)
-        with open(os.path.join(preds_path,'preds_test.json'),'w') as f:
-            json.dump(preds_test,f)
+        preds_test = manager.dict()
+        with manager.Pool(processes=8) as pool:
+            pool.map(partial(detect_worker, preds_test, [T1, T2], 0.9), file_names_test)
+        
+        with open(os.path.join(preds_path, 'preds_test.json'), 'w') as f:
+            json.dump(dict(preds_test), f)
