@@ -8,9 +8,10 @@ from PIL import Image, ImageDraw
 DATA_PATH = './data/RedLights2011_Medium'
 PREDS_PATH = './data/hw02_preds'
 OUTPUT_PATH = './data/output'
+ANNOTATION_PATH = './data/hw02_annotations'
 os.makedirs(OUTPUT_PATH, exist_ok=True) # create directory if needed 
 
-def visualize_boxes(file_names, preds, threshold):
+def visualize_boxes(file_names, preds, threshold, annotations=None):
     """ Visualize the bounding boxes to the source images """
     for file_name in tqdm(preds):
         img = Image.open(os.path.join(DATA_PATH, file_name))
@@ -22,6 +23,10 @@ def visualize_boxes(file_names, preds, threshold):
                 draw.rectangle([x0, y0, x1, y1], outline='red', width=2)
             elif score > threshold:
                 draw.rectangle([x0, y0, x1, y1], outline='red', width=2)
+        if annotations is not None:
+            gt_arr = annotations[file_name]
+            for gt in gt_arr:
+                draw.rectangle([gt[1], gt[0], gt[3], gt[2]], outline='blue', width=2)
         img.save(os.path.join(OUTPUT_PATH, file_name), "JPEG")
 
 if __name__ == '__main__':
@@ -32,4 +37,7 @@ if __name__ == '__main__':
     with open(os.path.join(PREDS_PATH, preds_name)) as fp:
         preds = json.load(fp)
     
-    visualize_boxes(file_names, preds, None)
+    with open(os.path.join(ANNOTATION_PATH, 'annotations_train.json')) as fp:
+        annotations = json.load(fp)
+
+    visualize_boxes(file_names, preds, 0.92, annotations=annotations)
