@@ -3,6 +3,7 @@ import json
 import numpy as np
 
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 def compute_iou(box_1, box_2):
     '''
@@ -45,7 +46,7 @@ def compute_counts(preds, gts, iou_thr=0.5, conf_thr=0.5):
         pred = preds[file_name]
         gt = gts[file_name]
         pred_cnt = len(list(filter(lambda x: x[4] >= conf_thr, pred)))
-        pred_positive = set([]), 
+        pred_positive = set([])
         for i in range(len(gt)):
             n_detection = 0
             for j in range(len(pred)):
@@ -57,10 +58,22 @@ def compute_counts(preds, gts, iou_thr=0.5, conf_thr=0.5):
                         pred_positive.add(j)
         TP += len(pred_positive)
         FN += max(len(gt) - len(pred_positive), 0)
-        FP += len(pred) - len(pred_positive)
-        print(file_name, TP, FN, FP)
+        FP += pred_cnt - len(pred_positive)
 
     return TP, FP, FN
+
+def plot_PR_curve(tp_arr, fp_arr, fn_arr, title, file_name):
+    precision = tp_arr / (tp_arr + fp_arr)
+    recall = tp_arr / (tp_arr + fn_arr)
+    plt.figure()
+    plt.scatter(recall[0,:], precision[0,:])
+    plt.scatter(recall[1,:], precision[1,:])
+    plt.scatter(recall[2,:], precision[2,:])
+    plt.title(title)
+    plt.legend(['IoU Threshold 0.25', 'IoU Threshold 0.5', 'IoU Threshold 0.75'])
+    plt.xlabel('Recall')
+    plt.ylabel('Precision')
+    plt.savefig(file_name)
 
 if __name__ == '__main__':
     # set a path for predictions and annotations:
@@ -73,26 +86,18 @@ if __name__ == '__main__':
     file_names_test = np.load(os.path.join(split_path,'file_names_test.npy'))
 
     # Set this parameter to True when you're done with algorithm development:
-    done_tweaking = False
+    done_tweaking = True
 
-    '''
-    Load training data. 
-    '''
+    # load train data
     with open(os.path.join(preds_path,'preds_train.json'),'r') as f:
         preds_train = json.load(f)
-        
     with open(os.path.join(gts_path, 'annotations_train.json'),'r') as f:
         gts_train = json.load(f)
 
     if done_tweaking:
-        
-        '''
-        Load test data.
-        '''
-        
+        # load test data      
         with open(os.path.join(preds_path,'preds_test.json'),'r') as f:
             preds_test = json.load(f)
-            
         with open(os.path.join(gts_path, 'annotations_test.json'),'r') as f:
             gts_test = json.load(f)
 
@@ -103,19 +108,33 @@ if __name__ == '__main__':
     for file_name in preds_train:
         confidence_thrs += list(map(lambda x: float(x[4]), preds_train[file_name]))
     confidence_thrs = np.sort(np.array(confidence_thrs)) # using (ascending) list of confidence scores as thresholds
-    tp_train = np.zeros(len(confidence_thrs))
-    fp_train = np.zeros(len(confidence_thrs))
-    fn_train = np.zeros(len(confidence_thrs))
-    for i, conf_thr in enumerate(confidence_thrs):
-        tp_train[i], fp_train[i], fn_train[i] = compute_counts(preds_train, gts_train, iou_thr=0.5, conf_thr=conf_thr)
-
-    # Plot training set PR curves
-    precision_train = tp_train / (tp_train + fp_train)
-    recall_train = tp_train / (tp_train + fn_train)
-    # print(precision_train)
-    # print(recall_train)
-    plt.scatter(recall_train, precision_train)
-    plt.savefig('PR_curve.png')
+    # store value for IOU threshold 0.25, 0.5, and 0.75
+    tp_train = np.zeros((3, len(confidence_thrs))) 
+    fp_train = np.zeros((3, len(confidence_thrs)))
+    fn_train = np.zeros((3, len(confidence_thrs)))
+    for i in tqdm(range(len(confidence_thrs))):
+        conf_thr = confidence_thrs[i]
+        tp_train[0, i], fp_train[0, i], fn_train[0, i] = compute_counts(preds_train, gts_train, iou_thr=0.25, conf_thr=conf_thr)
+        tp_train[1, i], fp_train[1, i], fn_train[1, i] = compute_counts(preds_train, gts_train, iou_thr=0.5, conf_thr=conf_thr)
+        tp_train[2, i], fp_train[2, i], fn_train[2, i] = compute_counts(preds_train, gts_train, iou_thr=0.75, conf_thr=conf_thr)
+    
+    plot_PR_curve(tp_train, fp_train, fn_train, 'PR curve for the train set',
+                  'PR_curve_train.png')
 
     if done_tweaking:
-        print('Code for plotting test set PR curves.')
+        confidence_thrs = []
+        for file_name in preds_test:
+            confidence_thrs += list(map(lambda x: float(x[4]), preds_test[file_name]))
+        confidence_thrs = np.sort(np.array(confidence_thrs)) # using (ascending) list of confidence scores as thresholds
+        # store value for IOU threshold 0.25, 0.5, and 0.75
+        tp_test = np.zeros((3, len(confidence_thrs))) 
+        fp_test = np.zeros((3, len(confidence_thrs)))
+        fn_test = np.zeros((3, len(confidence_thrs)))
+        for i in tqdm(range(len(confidence_thrs))):
+            conf_thr = confidence_thrs[i]
+            tp_test[0, i], fp_test[0, i], fn_test[0, i] = compute_counts(preds_test, gts_test, iou_thr=0.25, conf_thr=conf_thr)
+            tp_test[1, i], fp_test[1, i], fn_test[1, i] = compute_counts(preds_test, gts_test, iou_thr=0.5, conf_thr=conf_thr)
+            tp_test[2, i], fp_test[2, i], fn_test[2, i] = compute_counts(preds_test, gts_test, iou_thr=0.75, conf_thr=conf_thr)
+        
+        plot_PR_curve(tp_test, fp_test, fn_test, 'PR curve for the test set',
+                      'PR_curve_test.png')

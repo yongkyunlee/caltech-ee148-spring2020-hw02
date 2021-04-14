@@ -55,5 +55,3 @@ if split_test:
     
     with open(os.path.join(gts_path, 'annotations_test.json'),'w') as f:
         json.dump(gts_test,f)
-    
-    
